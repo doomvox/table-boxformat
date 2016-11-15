@@ -150,10 +150,8 @@ my $rscript_file = "$working_area/$rscript_name";
 ($DEBUG) && print "input dbox name: $dbox_name\nintermediate tsv_file: $tsv_file\n";
 
 # input from dbox file, output directly to a tsv file
-my $dbx = Data::BoxFormat->new( input_file  => $dbox_file,
-                            output_file => $tsv_file,
-                          );
-$dbx->scrape2tsv();
+my $dbx = Data::BoxFormat->new( input_file  => $dbox_file );
+$dbx->read2tsv( $tsv_file );
 
 # use first col as the default independent variable (x-axis)
 my @header = @{ $dbx->header() };
@@ -214,6 +212,9 @@ png("$png_file") # send plot output to png
 $pc
 graphics.off()   # doesn't chatter like dev.off
 END
+
+print $r_code, "\n" if $DEBUG;
+
 
 open my $out_fh, '>', $rscript_file;
 print { $out_fh } $r_code;

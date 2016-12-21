@@ -11,7 +11,7 @@
 
 ;; Description:
 ;; A typical database shell (e.g. psql, mysql) displays the
-;; results of queries in a tabular text format I call a "databox"
+;; results of queries in a tabular text format I call the box format
 ;; or "dbox" (file extension: *.dbox).
 
 ;; The skullplot.el package exists to assist in generating graphical
@@ -121,34 +121,40 @@ See section 'TODO'.  The argument defaults to 1."
 or immediately previous dbox."
   (interactive "p")
   (let* (
-         ;; emacs uses exec-path list, which has the PATH added to it, maybe,
-         ;; skip the use of progdir then...  pushing it onto end of PATH in .bashrc for now (bleh)
-;;         (progdir "/home/doom/End/Cave/SkullPlot/Wall/Data-BoxFormat/scripts") ;; DEBUG
+         ;; emacs uses exec-path list, which has the PATH added to it
          (progfile "skullplot.pl")
-;;         (slash "/") ;; TODO windows portability?
-;;         (plotter      (concat progdir slash progfile) )
          (plotter    progfile)
-;;          (tmpdir       "/home/doom/tmp")  ;; TODO (a) more specific? (b) create if not there
-;;          (tmpfile      (concat tmpdir slash "skullplot.dbox") ) ;; TODO generate unique name...?
          (tmpfile (skullplot-create-unique-tempfile))
-         (cmd (concat plotter " " tmpfile) )
+         (orig-buff (current-buffer))
            buffy
         )
+
+    (setq cmd
+          (cond (indie-count
+                 ;; skullplot.pl --indie_count=2 input_data.dbox
+                 (concat plotter " --indie_count="
+                         (number-to-string indie-count)
+                         " " tmpfile) )
+                 (t
+                  (concat plotter " " tmpfile) )
+                ))
+
     (setq table (skullplot-get-dbox))
     (find-file tmpfile)
-    ;; clear the buffer
-    (mark-whole-buffer)
-    (delete-region (mark) (point)) ;; TODO maybe add safety features to preserve any existing content
+
     (insert table)
     (save-buffer)
     (setq buffy (buffer-name))
-    (delete-window)
+    ;; (delete-window)  ;; ?
+
+    (switch-to-buffer orig-buff)
+
     (if skullplot-clean-up-buffers
          (kill-buffer buffy))
 
     ;; run the cmd asynchronusly in another process (no shell):
-    (message "Running: %s" cmd);; DEBUG
     (start-process "skullplot" "*skullplot*" plotter tmpfile)
+    (message "Running: %s" cmd);; DEBUG
     ))
 
 (defun skullplot-of-region (beg end)

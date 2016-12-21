@@ -14,7 +14,8 @@ Version 0.01
 
 our $VERSION = '0.01';
 my  $DEBUG   = 1;          # TODO revise before shipping
-use 5.008;
+# use 5.008;
+use 5.10.0;  # time to start saying 'say'
 use Carp;
 use Data::Dumper;
 use utf8::all;
@@ -282,6 +283,7 @@ has input_encoding => ( is => 'rw', isa => Str, default => 'UTF-8' );
 has output_encoding => ( is => 'rw', isa => Str, default => 'UTF-8' );
 
 # can define input data directly, or alternately slurp it in from a file
+#    TODO better to avoid slurping, work line-at-a-time?
 has input_data  => ( is => 'rw', isa => Str,
            default =>
              sub { my $self = shift;
@@ -299,12 +301,13 @@ has input_data  => ( is => 'rw', isa => Str,
                    return $data;
                  },
             lazy => 1 );
-# TODO would be better if it avoided slurping, and worked line-at-a-time
 
 has header => ( is => 'rw', isa => ArrayRef, default => sub{ [] } );
 
-# TODO
-# but don't *really* want to allow mix-and-match delims, it's always one or the other throughout.
+# info about format/style of last data read
+has meta   => ( is => 'rw', isa => HashRef,  default => sub{ {} } );
+
+# TODO don't *really* want mix-and-match delims, it's one or the other throughout.
 has delimiter_re  => ( is => 'rw', isa => RegexpRef,
                        default =>
                        sub{ qr{
@@ -318,9 +321,7 @@ has delimiter_re  => ( is => 'rw', isa => RegexpRef,
 has horizontal_re => ( is => 'rw', isa => RegexpRef,
                        default => sub{ qr{ ^ \p{IsHor}+  $ }x } );
 
-# TODO
-#   horizontal rules have crosses that mark-the-spots of col borders
-#   use this piece of information: fixed width fields, delims are lined-up
+# TODO not used: wanted to know which kind of cross it is
 has cross_re  => ( is => 'rw', isa => RegexpRef,
                        default =>
                        sub{ qr{
@@ -353,7 +354,7 @@ in the object's L<header>.
 
 =cut
 
-### TODO be more forgiving of values with embedded delim chars.
+### TODO be more forgiving of values with embedded delim chars. (( see read_exp ))
 sub read {
   my $self = shift;
 
@@ -412,10 +413,10 @@ sub read {
 }
 
 
-# Experimental version: try to develop "parse" that
-# uses all information, including column locations.
-# Also, could try to do it single-pass (or closer to it).
-# Compromise: line-at-a-time but allow backtracking on a line.
+# Experimental version:
+# Uses the header ruler cross locations to identify the column boundaries
+# Treats data lines as fixed-width fields, to handle the case of strings
+# with embedded separator characters.
 sub read_exp {
   my $self = shift;
 
@@ -425,74 +426,96 @@ sub read_exp {
 
   my $cross_re      = $self->cross_re;
 
-   my $left_edge_re  = $self->left_edge_re;
-   my $right_edge_re = $self->right_edge_re;
+  my $left_edge_re  = $self->left_edge_re;
+  my $right_edge_re = $self->right_edge_re;
 
-  # Here we just look for lines with delimiters on them (skipping
-  # anything else) and then split the lines on the delimiters,
-  # trimming whitespace from the boundaries of all values
+  my %meta; # as we understand what kind of data we're looking at, stash info here
 
+  # First we scan ahead looking for a header ruler
+  # (first or third line for mysql, second line for postgres),
+  # then we split lines on the column boundaries (the crosses in header)
   my @lines = split /\n/, $input_data;
 
   my ( @data, @dividers );
 
-  # we use the crosses in the horizontal rule line to identify column boundaries
-  my @pos;
- HEADSCAN:
-  foreach my $line ( @lines ) { # TODO: $line is aliased back into @lines...
-#     # strip leading and trailing spaces (as in the next loop-- see below)
-#     $line =~ s{ ^ \s*        }{}xms;
-#     $line =~ s{   \s* $      }{}xms;
+  # we use the crosses in the horizontal ruler line to identify column boundaries
+  my (@pos, $first_data, $header);
+ RULERSCAN:
+  foreach my $i ( 0 .. $#lines ) {
+    my $line = $lines[ $i ];
 
     if( $line =~ m{ $horizontal_re }x ) {
 
-      # on mysql-style, want to strip leading and trailing crosses
-      $line =~ s{ ^ $cross_re  }{}xms;
-      $line =~ s{ $cross_re $  }{}xms;
+      if( $i == 0 ) {
+        $meta{ ruler_loc } = 'mysql';
+        $header = 1;
+        $first_data = 3;
+      } elsif ( $i == 1 ) {
+        $meta{ ruler_loc } = 'postgres';
+        $header = 0;
+        $first_data = 2;
+      }
 
-      # 'index' be dumb:
-      #  o  it can't use a regexp: it's limited to character matches.
-      #  o  returns -1 on failure (what's wrong with undef?)
+      # on mysql-style, we strip leading and trailing crosses
+      if(
+         $line =~ s{ ^ $cross_re  }{}xms &&
+         $line =~ s{ $cross_re $  }{}xms
+        ) {
+        $meta{ boundary_style } = 'mysql';
+      } else {
+        $meta{ boundary_style } = 'postgres';
+      }
 
-      my @cross_candy =
-        ( "\N{PLUS SIGN}",  # ye olde ascii '+'
-          "\N{BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL}" ); # newfangled '┼'
+      # TODO identifying type of cross could be combined with match to find horizontal rule
+      my %cross_candidates =
+        ( "\N{PLUS SIGN}"                                  => 'ascii',      # ye olde '+'
+          "\N{BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL}" => 'unicode', ); # newfangled '┼'
 
       my $cross;
-      foreach my $candy ( @cross_candy ) {
+      foreach my $candy ( keys %cross_candidates ) {
         my $pat = '\\' . $candy;  # need to backwhack the + char
         if ( $line =~ m{ $pat }x ) {
           $cross = $candy;
+          $meta{ encoding } = $cross_candidates{ $candy };
         }
       }
 
+      # 'index' be dumb:
+      #    o  it can't use a regexp: it's limited to character matches.
+      #    o  returns -1 on failure (what's wrong with undef?)
       my $pos = 0;
-      while( ( $pos = index( $line, $cross, $pos ) ) > -1 ){
+      while( ( $pos = index( $line, $cross, $pos ) ) > -1 ) {
         push @pos, $pos;
         $pos++;
       }
-      last HEADSCAN;
+      push @pos, length( $line ); # treat the eol as another column boundary
+      last RULERSCAN;
     }
   }
 
+  $meta{ format } = $self->guess_format( \%meta );
+
+ # read in header and data lines now that we know where the boundaries are.
  LINE:
-  foreach my $line ( @lines ) {
+  my $last_data = $#lines;
+  $last_data -= 1 if $meta{ boundary_style } eq 'mysql';  # to skip that ruler line at bottom
+  foreach my $i ( $header, $first_data .. $last_data ) {
+    my $line = $lines[ $i ];
 #     # strip leading and trailing whitespace
 #     $line =~ s{ ^ \s*        }{}xms;
 #     $line =~ s{   \s* $      }{}xms;
 
-    # trim the left and right borders (if any)
-    # (converts mysql-style lines into psql-style lines)
-    $line =~ s{ $left_edge_re  }{}xms;
-    $line =~ s{ $right_edge_re }{}xms;
-
-    next LINE if( $line =~ m{ $horizontal_re }x );
+    if( $meta{ boundary_style } eq 'mysql' ) {
+      # convert to postqres-style lines by trimming the borders
+      $line =~ s{ $left_edge_re  }{}xms;
+      $line =~ s{ $right_edge_re }{}xms;
+    }
 
     my @vals;
     my $beg = 0;
     foreach my $pos ( @pos ) {
       my $val =
-        substr( $line, $beg, ($pos-$beg-1) );
+        substr( $line, $beg, ($pos-$beg-1) );  # TODO why not use unpack?
       # strip leading and trailing spaces
       $val =~ s/^\s+//;
       $val =~ s/\s+$//;
@@ -500,23 +523,49 @@ sub read_exp {
       $beg = $pos + 1;
     }
 
-    # Now do the last one (through the end of the line)
-    my $val =
-      substr( $line, $beg );
-    # strip leading and trailing spaces
-    $val =~ s/^\s+//;
-    $val =~ s/\s+$//;
-    push @vals, $val;
-
-    # array_of_array format (header treated like any other vals)
+    # array_of_array format (header in first line)
     push @data, \@vals;
-
-    my @header;
-    @header = @{ $data[0] } if @data;
-    $self->header( \@header );
   }
+  my @header;
+  @header = @{ $data[0] } if @data;
+  $self->header( \@header );
+
+  $self->meta( \%meta );
+
   return \@data;
 }
+
+
+
+=item guess_format
+
+Examines the given meta data and returns a guess as to the overall format
+(e.g. 'mysql_ascii', 'postgres_ascii' or 'postgres_unicode').
+
+=cut
+
+# heuristic: the most common value in the hash is the format
+# then appends the encoding
+sub guess_format {
+  my $self = shift;
+  my $meta = shift;
+
+  my %count;
+  $count{ $_ }++ for values %{ $meta };
+
+  my $maxkey = '';
+  my $max = 0;
+  foreach my $val ( keys %count ) {
+    if( $count{ $val } > $max ) {
+      $max = $count{ $val };
+      $maxkey = $val;
+    }
+  }
+
+  my $format = $maxkey . '_' .   $meta->{ encoding };
+  return $format;
+}
+
 
 
 
@@ -538,7 +587,8 @@ sub read2tsv {
   }
   my $output_encoding = $self->output_encoding;
 
-  my $data = $self->read;
+#  my $data = $self->read;
+  my $data = $self->read_exp;
 
   my $out_enc = ">:encoding($output_encoding)";
   open my $fh, $out_enc, $output_file or die "$!";

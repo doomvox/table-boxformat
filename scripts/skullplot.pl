@@ -88,20 +88,20 @@ my $DEBUG   = 0;
 my $working_area = "/tmp/.skullplot";   # default
 my ($dependent_spec, $independent_spec, $indie_count, $image_viewer);
 
-GetOptions ("d|debug"    => \$DEBUG,
-            "v|version"  => sub{ say_version(); },
-            "h|?|help"   => sub{ say_usage();   },
+GetOptions ("d|debug"       => \$DEBUG,
+            "v|version"     => sub{ say_version(); },
+            "h|?|help"      => sub{ say_usage();   },
 
-           "dependents=s"     => \$dependent_spec,    # the x-axis, plus any gbcats
-           "independents=s"   => \$independent_spec,  # the y-axis
+           "indie_count=i"  => \$indie_count,      # alt spec: indies=x1+gbcats; residue are ys
 
-           "indie_count=i" => \$indie_count,          # alt spec: indies=x1+gbcats; residue are ys
+           "image_viewer=s" => \$image_viewer,     # default: ImageMagick's display (if available)
 
-           "image_viewer=s" => \$image_viewer,        # default: ImageMagick's display (if available)
+           "working_area=s" => \$working_area,
 
-           "working_area=s"   => \$working_area,
+           ## Experimental, alternate interface
+           "dependents=s"   => \$dependent_spec,   # the x-axis, plus any gbcats
+           "independents=s" => \$independent_spec, # the y-axis
            ) or say_usage();
-
 
 unless( -d $working_area ) {
   mkpath( $working_area );
@@ -135,17 +135,10 @@ if ( $dependent_spec ) {
   ($DEBUG) &&
     print STDERR "Given indie_count: $indie_count\n";
 } else {
+  ($DEBUG) &&
+    print STDERR "Using default indie_count of 1\n";
   $indie_count = 1;
 }
-
-### generate a tsv file in the working area, along with rscript
-
-my $dbox_name = basename( $dbox_file );
-( my $tsv_name     = $dbox_name ) =~ s{ \.dbox $ }{.tsv}x;
-( my $rscript_name = $dbox_name ) =~ s{ \.dbox $ }{.t}x;
-
-my $tsv_file =     "$working_area/$tsv_name";
-my $rscript_file = "$working_area/$rscript_name";
 
 ($DEBUG) && print "input dbox name: $dbox_name\nintermediate tsv_file: $tsv_file\n";
 
@@ -153,18 +146,44 @@ my $rscript_file = "$working_area/$rscript_name";
 my $dbx = Data::BoxFormat->new( input_file  => $dbox_file );
 $dbx->read2tsv( $tsv_file );
 
-# use first col as the default independent variable (x-axis)
 my @header = @{ $dbx->header() };
-my $independent_default  = shift( @header );
 
-# my $dependent_default    = join ',', @header;
+
+### BOOKMARK STET above definitely stays in skullplot.pl
+
+### BEG SUB_CANDIDATE
+# Needs passed in: @header, $indie_count, dbox_file, working_area
+
+# optionally (generate defaults internally) (( TODO )):
+# $tsv_file, $rscript_file, $png_file
+
+### generate a tsv file in the working area, along with rscript
+my $dbox_name = basename( $dbox_file );
+( my $tsv_name     = $dbox_name ) =~ s{ \.dbox $ }{.tsv}x;
+( my $rscript_name = $dbox_name ) =~ s{ \.dbox $ }{.r}x;
+
+my $tsv_file     = "$working_area/$tsv_name";
+my $rscript_file = "$working_area/$rscript_name";
+
+( my $png_name     = $dbox_name ) =~ s{ \.dbox $ }{.png}x;
+my $png_file     = "$working_area/$png_name";
+
+
+# use first col as the default independent variable (x-axis)
+my $independent_default  = $header[ 0 ];
 
 my ($dep_list, $indep_list);
 my ( @dep_fields, @indep_fields, @gb_cats, $x_axis );
-if( $indie_count ) {
+if( $indie_count == 1 ) { # special case the most common, for code clarity
   $x_axis = $independent_default;
-  @gb_cats      = @header[ 0 .. $indie_count-1 ];
-  @indep_fields = @header[ $indie_count .. $#header ];
+  @indep_fields = $header[ -1 ];
+  @gb_cats      = @header[ 1 .. ($#header-1)  ];
+} elsif( $indie_count > 1 ) { ### TODO this branch seems broken
+  $x_axis = $independent_default;
+#  @gb_cats      = @header[ 0 .. $indie_count-1 ];
+#  @indep_fields = @header[ $indie_count .. $#header ];
+  @indep_fields = @header[ $#header-($indie_count-1) .. $#header ];
+  @gb_cats      = @header[ 1 .. ( $#header - $indie_count ) ];
 } elsif ( $dependent_spec || $independent_spec )  {
   $dep_list     = $dependent_spec   || join ',', @header;
   $indep_list   = $independent_spec || $independent_default;
@@ -198,7 +217,7 @@ my $pc = 'ggplot( skull, ' ;
   $pc .= "              size  = 2.5 " ;
   $pc .= '              )  ' ;
 
-(my $png_file = $tsv_file ) =~s{ \.tsv $ }{.png}x;
+
 
 ### Generate R code file to run with Rscript call
 ### (in debug mode, make it a standalone unix script)
@@ -214,7 +233,6 @@ graphics.off()   # doesn't chatter like dev.off
 END
 
 print $r_code, "\n" if $DEBUG;
-
 
 open my $out_fh, '>', $rscript_file;
 print { $out_fh } $r_code;
@@ -255,6 +273,8 @@ if( $image_viewer ) {
 
 exec( $vcmd );
 
+### END SUB_CANDIDATE (awkward: a system and an exec).
+
 
 #######
 ### end main, into the subs
@@ -284,6 +304,22 @@ sub say_version {
 
 
 __END__
+
+=head1 NOTES
+
+I think I like the idea of doing it like this:
+
+  One gb_cat:   use color
+  Two gb_cats:  use shape for one with fewest values, use color for the other.
+                   (( but if that value count exceeds ~6, fuse both as color ))
+  Three gb_cats: use shape for the one with fewest values (( ditto ))
+                 fuse the remaining items into a joint string value,
+                 assign that to color.
+
+((And: this logic is getting complex enough to move to a Skullplot module
+of some sort, which could open the door to a seperate package again.))
+
+  What name? No reason to *presume* R/ggplot2, that's a plug-in style choice.
 
 =head1 AUTHOR
 

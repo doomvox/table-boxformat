@@ -1,3 +1,4 @@
+# Run via 'make test' or 'perl 67-Data-BoxFormat-read-embedded_vertbars.t'
 
 use strict;
 use warnings;
@@ -59,7 +60,7 @@ my $DAT = "$Bin/dat";
                      input_file => $input_file,
                     );
 
-  my $data = $bxs->read_exp; # array of arrays, header in first row
+  my $data = $bxs->read_dbox; # array of arrays, header in first row
 
   is_deeply( $data, $expected, "$test_name on $format format" );
   # say "===";
@@ -94,7 +95,7 @@ my $DAT = "$Bin/dat";
                      input_file => $input_file,
                     );
 
-  my $data = $bxs->read_exp; # array of arrays, header in first row
+  my $data = $bxs->read_dbox; # array of arrays, header in first row
 
   # say "---\n", Dumper( $data ) , "---";
   is_deeply( $data, $expected, "$test_name on $format format" );
@@ -133,7 +134,7 @@ exit;
                      input_file => $input_file,
                     );
 
-  my $data = $bxs->read_exp; # array of arrays, header in first row
+  my $data = $bxs->read_dbox; # array of arrays, header in first row
 
   is_deeply( $data, $expected, "$test_name on $format format" );
 
@@ -147,7 +148,7 @@ exit;
                      input_file => $input_file,
                     );
 
-  $data = $bxs->read_exp; # array of arrays, header in first row
+  $data = $bxs->read_dbox; # array of arrays, header in first row
 
   is_deeply( $data, $expected, "$test_name on $format format" );
 

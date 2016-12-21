@@ -1,9 +1,9 @@
-# Run as 'make test' or 'perl Data-Boxes-Format-psql.t'
+# Run via 'make test' or 'perl 66-Data-Boxes-Format-psql.t'
 
 use strict;
 use warnings;
-
-use Data::Dumper;
+use 5.10.0;
+use Data::Dumper::Concise;
 
 use Test::More;
 BEGIN {
@@ -38,7 +38,7 @@ my $DAT = "$Bin/dat";
                      input_file => $input_file,
                     );
 
-  my $data = $bxs->read; # array of arrays, header in first row
+  my $data = $bxs->read_dbox; # array of arrays, header in first row
 
   # print Dumper( $data ) , "\n";
 
@@ -55,7 +55,7 @@ my $DAT = "$Bin/dat";
                      input_file => $input_file,
                     );
 
-  $data = $bxs->read; # array of arrays, header in first row
+  $data = $bxs->read_dbox; # array of arrays, header in first row
 
   is_deeply( $data, $expected, "$test_name on $format format" );
 
@@ -69,32 +69,13 @@ my $DAT = "$Bin/dat";
                      input_file => $input_file,
                     );
 
-  $data = $bxs->read; # array of arrays, header in first row
+  $data = $bxs->read_dbox; # array of arrays, header in first row
 
-  is_deeply( $data, $expected, "$test_name on $format format" );
+  is_deeply( $data, $expected, "$test_name on $format format" )
+    or say Dumper( $data );
 
 }
 
-{
-  my $test_name = "Testing read2tsv method";
 
-  my $format = 'psql_unicode';
-
-  my $input_file  = "$DAT/expensoids-psql_unicode.dbox";
-  my $output_file = "$DAT/expensoids-psql_unicode.tsv";
-  my $bxs =
-    Data::BoxFormat->new(
-                     input_file  => $input_file,
-                    );
-
-  my $status = $bxs->read2tsv( $output_file ); # output straight to tsv file
-  is( $status, 1, "$test_name: returns success code" );
-
-  my $expected_file = qq{$DAT/expensoids_expected.tsv};
-  my $expected = do{ undef $/; open my $fh, '<', $expected_file; <$fh> };
-  my $result   = do{ undef $/; open my $fh, '<', $expected_file; <$fh> };
-
-  is_deeply( $result, $expected, "$test_name on $format format" );
-}
 
 done_testing();

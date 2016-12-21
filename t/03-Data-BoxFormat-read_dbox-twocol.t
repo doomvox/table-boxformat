@@ -43,7 +43,7 @@ my $DAT = "$Bin/dat";
                      input_file => $input_file,
                     );
 
-  my $data = $bxs->read_exp; # array of arrays, header in first row
+  my $data = $bxs->read_dbox; # array of arrays, header in first row
 
   # print Dumper( $data ) , "\n";
 

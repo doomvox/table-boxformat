@@ -337,87 +337,28 @@ has right_edge_re => ( is => 'rw', isa => RegexpRef,
                        default => sub{ qr{ [\|] \s* $ }xms } );
 
 
-=item read
+=item read_dbox
 
 Given data in tabular boxes from a multiline string,
 convert it into an array of arrays.
 
    my $data =
-         $bxs->read();
+         $bxs->read_dbox();
 
 Goes through the boxdata slurped into the object field input_data,
 returns it as an array of arrays, including the field names in
 the first row.
 
-As a side-effect, stores the header (first row of boxdata)
-in the object's L<header>.
+As a side-effect, copies the header (first row of returned data)
+in the object's L<header>, and puts some format metadata in the object's L<meta>.
 
 =cut
-
-### TODO be more forgiving of values with embedded delim chars. (( see read_exp ))
-sub read {
-  my $self = shift;
-
-  my $input_data    = $self->input_data;
-  my $horizontal_re = $self->horizontal_re;  # intended to skip these... TODO
-  my $delimiter_re  = $self->delimiter_re;
-
-  # before we split on delimiters, trim the left and right borders (if any)
-  # (converts mysql-style lines into psql-style lines)
-   my $left_edge_re  = $self->left_edge_re;
-   my $right_edge_re = $self->right_edge_re;
-
-# BUG (?): will never match, because of the \+ stuff
-#    $input_data =~ s{ ^ \s* \+       }{}xmsg;
-#    $input_data =~ s{ \+ \s* $       }{}xmsg;
-   $input_data =~ s{ ^ \s*        }{}xmsg;
-   $input_data =~ s{   \s* $       }{}xmsg;
-
-
-   $input_data =~ s{ $left_edge_re  }{}xmsg;
-   $input_data =~ s{ $right_edge_re }{}xmsg;
-
-  # Here we just look for lines with delimiters on them (skipping
-  # anything else) and then split the lines on the delimiters,
-  # trimming whitespace from the boundaries of all values
-
-  my @lines = split /\n/, $input_data;
-
-  my ( @data );
-  for my $i ( 0 .. $#lines ) {
-    my $line = $lines[ $i ];
-
-    # when there's at least one delim, we assume it's a data line
-    if( $line =~ /$delimiter_re/xms ) {
-
-      no warnings 'uninitialized';
-
-      # need this for the whitespace not adjacent to delimiters...
-      $line =~ s/^\s+//; # strip leading spaces
-      $line =~ s/\s+$//; # strip trailing spaces (if any)
-
-      # Note: split pattern also eats bracketing whitespace
-      my @vals =
-        split /$delimiter_re/, $line;
-
-      # array_of_array format (header treated like any other vals)
-      push @data, \@vals;
-    }
-
-    my @header;
-    @header = @{ $data[0] } if @data;
-    # print STDERR Dumper( \@header ), "\n"; # TODO when turned on there's an odd instance in tests where an empty one comes up
-    $self->header( \@header );
-  }
-  return \@data;
-}
-
 
 # Experimental version:
 # Uses the header ruler cross locations to identify the column boundaries
 # Treats data lines as fixed-width fields, to handle the case of strings
 # with embedded separator characters.
-sub read_exp {
+sub read_dbox {
   my $self = shift;
 
   my $input_data    = $self->input_data;
@@ -535,8 +476,6 @@ sub read_exp {
   return \@data;
 }
 
-
-
 =item guess_format
 
 Examines the given meta data and returns a guess as to the overall format
@@ -567,7 +506,81 @@ sub guess_format {
 }
 
 
+=item read_simple
 
+DEPRECATED
+
+Given data in tabular boxes from a multiline string,
+convert it into an array of arrays.
+
+   my $data =
+         $bxs->read();
+
+Goes through the boxdata slurped into the object field input_data,
+returns it as an array of arrays, including the field names in
+the first row.
+
+As a side-effect, stores the header (first row of boxdata)
+in the object's L<header>.
+
+=cut
+
+# Early appoach: does regexp parsing of separator characters on each line
+sub read_simple {
+  my $self = shift;
+
+  my $input_data    = $self->input_data;
+  my $horizontal_re = $self->horizontal_re;  # intended to skip these... TODO
+  my $delimiter_re  = $self->delimiter_re;
+
+  # before we split on delimiters, trim the left and right borders (if any)
+  # (converts mysql-style lines into psql-style lines)
+   my $left_edge_re  = $self->left_edge_re;
+   my $right_edge_re = $self->right_edge_re;
+
+# BUG (?): will never match, because of the \+ stuff
+#    $input_data =~ s{ ^ \s* \+       }{}xmsg;
+#    $input_data =~ s{ \+ \s* $       }{}xmsg;
+   $input_data =~ s{ ^ \s*        }{}xmsg;
+   $input_data =~ s{   \s* $       }{}xmsg;
+
+   $input_data =~ s{ $left_edge_re  }{}xmsg;
+   $input_data =~ s{ $right_edge_re }{}xmsg;
+
+  # Here we just look for lines with delimiters on them (skipping
+  # anything else) and then split the lines on the delimiters,
+  # trimming whitespace from the boundaries of all values
+
+  my @lines = split /\n/, $input_data;
+
+  my ( @data );
+  for my $i ( 0 .. $#lines ) {
+    my $line = $lines[ $i ];
+
+    # when there's at least one delim, we assume it's a data line
+    if( $line =~ /$delimiter_re/xms ) {
+
+      no warnings 'uninitialized';
+
+      # need this for the whitespace not adjacent to delimiters...
+      $line =~ s/^\s+//; # strip leading spaces
+      $line =~ s/\s+$//; # strip trailing spaces (if any)
+
+      # Note: split pattern also eats bracketing whitespace
+      my @vals =
+        split /$delimiter_re/, $line;
+
+      # array_of_array format (header treated like any other vals)
+      push @data, \@vals;
+    }
+
+    my @header;
+    @header = @{ $data[0] } if @data;
+    # print STDERR Dumper( \@header ), "\n"; # TODO when turned on there's an odd instance in tests where an empty one comes up
+    $self->header( \@header );
+  }
+  return \@data;
+}
 
 =item read2tsv
 
@@ -588,7 +601,7 @@ sub read2tsv {
   my $output_encoding = $self->output_encoding;
 
 #  my $data = $self->read;
-  my $data = $self->read_exp;
+  my $data = $self->read_dbox;
 
   my $out_enc = ">:encoding($output_encoding)";
   open my $fh, $out_enc, $output_file or die "$!";

@@ -161,7 +161,8 @@ TODO rename this: separator, not delimiter.
 
 =item horizontal_re
 
-Horizontal bars inserted for readability
+Matches the Horizontal ruler lines (typically just under the
+header line)
 
 =item cross_re
 
@@ -219,8 +220,11 @@ has input_data  => ( is => 'rw', isa => Str,
 
 has header => ( is => 'rw', isa => ArrayRef, default => sub{ [] } );
 
+has format => ( is => 'rw', isa => Str,    default => sub{ '' } );
+
 # info about format/style of last data read
 has meta   => ( is => 'rw', isa => HashRef,  default => sub{ {} } );
+
 
 # TODO don't *really* want mix-and-match delims, it's one or the other throughout.
 has delimiter_re  => ( is => 'rw', isa => RegexpRef,
@@ -231,12 +235,6 @@ has delimiter_re  => ( is => 'rw', isa => RegexpRef,
                                     {1,1}   # just one delim char
                                 \s+         # require trailing whitespace
                             }xms } );
-
-
-### TODO extend this so that spaces are included with IsHor.
-###      (1) in the CharClasses module (2) using that experimental perl feature...
-# has horizontal_re => ( is => 'rw', isa => RegexpRef,
-#                        default => sub{ qr{ ^ \p{IsHor}+  $ }x } );
 
 has horizontal_re => ( is => 'rw', isa => RegexpRef,
                        default =>
@@ -292,13 +290,10 @@ sub read_dbox {
   my $horizontal_re = $self->horizontal_re;
   # my $delimiter_re  = $self->delimiter_re;
 
-  my $cross_re      = $self->cross_re;
+  # my $cross_re      = $self->cross_re;
 
   my $left_edge_re  = $self->left_edge_re;
   my $right_edge_re = $self->right_edge_re;
-
-  my %meta; # as we understand what kind of data we're looking at, stash info here
-            # TODO note: currently just a "format" field.  Simplify?
 
   # First we scan ahead looking for a header ruler
   # (first or third line for mysql, second line for postgres),
@@ -308,111 +303,28 @@ sub read_dbox {
   my ( @data, @dividers );
 
   # we use the crosses in the horizontal ruler line to identify column boundaries
-  my (@pos, $first_data, $header);
-  #  foreach my $i ( 0 .. $#lines ) {
-  my $ruler;
+  my (@pos, $format, $first_data, $header, $ruler);
  RULERSCAN:
   foreach my $i ( 1 .. 2 ) { # ruler lines are always near top
     my $line = $lines[ $i ];
 
     if( $line =~ m{ $horizontal_re }x ) { ## TODO rename this pattern?  (and *_re to *_pat)
-      # TODO move this to a routine of it's own, args: $line and $i
-      $ruler = $line;
-      # $meta{ ruler_loc } = $i;
-
-      if( $i == 2 ) {
-        $meta{ format } = 'mysql';
-        $header = 1;
-        $first_data = 3;
-      } elsif ( $i == 1 ) {
-        $header = 0;
-        $first_data = 2;
-        if( $ruler =~ $cross_re ) {
-          $meta{ format } = 'postgres';
-        } else {
-          $meta{ format } = 'sqlite';
-        }
-      }
-
-      # on mysql-style, we strip leading and trailing crosses
-      if(
-         $ruler =~ s{ ^ $cross_re  }{}xms &&
-         $ruler =~ s{ $cross_re $  }{}xms
-        ) {
-        warn "ruler line terminated by crosses is expected to be mysql"
-          unless( $meta{ format } eq 'mysql' )
-      } else {
-        warn "ruler line was not terminated by crosses, but not postgres or sqlite"
-          unless( ( $meta{ format } eq 'postgres') || ( $meta{ format } eq 'sqlite' ))
-      }
-
-      # TODO identifying the cross could be combined with match to find horizontal rule
-      my %cross_candidates =
-        ( "\N{PLUS SIGN}"                                  => 'ascii',      # ye olde '+'
-          "\N{BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL}" => 'unicode',    # newfangled '┼'
-          " "                                              => 'spaces',
-        );
-
-      my $cross;
-      foreach my $candy ( keys %cross_candidates ) {
-        my $pat = '\\' . $candy;  # need to backwhack the + char
-
-        if( $candy eq ' ' ) {
-          $pat = qr{ \s{1,2} }x;
-        }
-
-        if ( $ruler =~ m{ $pat }x ) {
-          $cross = $candy;
-          # $meta{ encoding } = $cross_candidates{ $candy };
-
-          # TODO this is getting silly, no?
-          $meta{ format } .= '_' . 'unicode' if  $cross_candidates{ $candy } eq 'unicode';
-
-        }
-      }
-
-      # 'index' be dumb:
-      #    o  it can't use a regexp: it's limited to character matches.
-      #    o  returns -1 on failure (what's wrong with undef?)
-      my $pos = 0;
-      while( ( $pos = index( $ruler, $cross, $pos ) ) > -1 ) {
-        push @pos, $pos;
-        $pos++;
-      }
-      push @pos, length( $ruler ); # treat the eol as another column boundary
-
-      # cleanup @pos: on immediately consecutive entries can drop the second one
-      my $last = 0;
-      my @newpos = ();
-      foreach my $i ( 0 .. $#pos ) {
-        my $this = $pos[ $i ];
-        push @newpos, $this
-          unless ( ($this-$last) == 1 );
-        $last = $this;
-      }
-      @pos = @newpos;
-
+      ( $format, $header, $first_data, @pos ) = $self->analyze_ruler( $line, $i );
       last RULERSCAN;
     }
   }
-  croak "no horizontal rule line found: is this really db output data box format?"
-    unless $ruler;
 
-  # todo re-write or drop:
-  #  $meta{ format } = $self->guess_format( \%meta );
+  unless( $format ) {
+    croak "no horizontal rule line found: is this really db output data box format?"
+  }
 
- # read in header and data lines now that we know where the boundaries are.
-# line:
+ # read in header and data lines now that we know where the column boundaries are.
   my $last_data = $#lines;
-  $last_data -= 1 if $meta{ format } eq 'mysql';  # to skip that ruler line at bottom
+  $last_data -= 1 if $format eq 'mysql';  # to skip that ruler line at bottom
   foreach my $i ( $header, $first_data .. $last_data ) {
     my $line = $lines[ $i ];
-#     # strip leading and trailing whitespace
-#     $line =~ s{ ^ \s*        }{}xms;
-#     $line =~ s{   \s* $      }{}xms;
 
-#    if( $meta{ boundary_style } eq 'mysql' ) {
-    if( $meta{ format } eq 'mysql' ) {
+    if( $format eq 'mysql' ) {
       # convert to postqres-style lines by trimming the borders
       $line =~ s{ $left_edge_re  }{}xms;
       $line =~ s{ $right_edge_re }{}xms;
@@ -422,7 +334,6 @@ sub read_dbox {
     my $beg = 0;
     foreach my $pos ( @pos ) {
       my $val =
-#        substr( $line, $beg, ($pos-$beg-1) );  # todo why not use unpack?
         substr( $line, $beg, ($pos-$beg) );  # todo why not use unpack?
       # strip leading and trailing spaces
       $val =~ s/^\s+//;
@@ -438,39 +349,118 @@ sub read_dbox {
   @header = @{ $data[0] } if @data;
   $self->header( \@header );
 
-  $self->meta( \%meta );
+  $self->format( $format );
 
   return \@data;
 }
 
-=item guess_format
 
-Examines the given meta data and returns a guess as to the overall format
-(e.g. 'mysql_ascii', 'postgres_ascii' or 'postgres_unicode').
+
+=item analyze_ruler
+
+Internal method that analyzes the given ruler line and location
+to determine column widths and also the info about the dbox format.
+
+Returns an ordered list like so:
+
+ $format
+   'mysql', 'postgres', 'postgres_unicode', 'sqlite'
+
+ $header
+   row number: 0 or 1
+
+ $first_data
+   row number where data begins:  2 or 3
+
+ @pos
+   list of column boundary positions
+
+
+Example usage:
+
+  ( $format, $header, $first_data, @pos ) = $self->analyze_ruler( $line, $i );
 
 =cut
 
-# heuristic: the most common value in the hash is the format
-# then appends the encoding
-sub guess_format {
+sub analyze_ruler {
   my $self = shift;
-  my $meta = shift;
+  my $ruler      = shift;
+  my $ruler_loc  = shift;
 
-  my %count;
-  $count{ $_ }++ for values %{ $meta };
+  my $cross_re      = $self->cross_re;
 
-  my $maxkey = '';
-  my $max = 0;
-  foreach my $val ( keys %count ) {
-    if( $count{ $val } > $max ) {
-      $max = $count{ $val };
-      $maxkey = $val;
+  my ( $format, $header, $first_data, @pos );
+
+  if ( $ruler_loc == 2 ) {
+    $format = 'mysql';
+    $header = 1;
+    $first_data = 3;
+  } elsif ( $ruler_loc == 1 ) {
+    $header = 0;
+    $first_data = 2;
+    if ( $ruler =~ $cross_re ) {
+      $format = 'postgres';
+    } else {
+      $format = 'sqlite';
     }
   }
 
-  my $format = $maxkey . '_' .   $meta->{ encoding };
-  return $format;
+  if ( $format eq 'mysql' ) {
+    unless (
+            $ruler =~ s{ ^ $cross_re  }{}xms &&
+            $ruler =~ s{ $cross_re $  }{}xms
+           ) {
+      warn "mysql format, but ruler line was not terminated by crosses"
+    }
+  }
+
+  # TODO identifying the cross could be combined with match to find horizontal rule
+  my %cross_candidates =
+    ( "\N{PLUS SIGN}"                                  => 'ascii', # ye olde '+'
+      "\N{BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL}" => 'unicode', # newfangled '┼'
+      " "                                              => 'spaces',
+    );
+
+  my $cross;
+  foreach my $candy ( keys %cross_candidates ) {
+    my $pat = '\\' . $candy;    # need to backwhack the + char
+
+    if ( $candy eq ' ' ) {
+      $pat = qr{ \s{1,2} }x;
+    }
+
+    if ( $ruler =~ m{ $pat }x ) {
+      $cross = $candy;
+      # $meta{ encoding } = $cross_candidates{ $candy };
+
+      $format .= '_' . 'unicode' if  $cross_candidates{ $candy } eq 'unicode';
+    }
+  }
+
+  # 'index' be dumb:
+  #    o  it can't use a regexp: it's limited to character matches.
+  #    o  returns -1 on failure (what's wrong with undef?)
+  my $pos = 0;
+  while ( ( $pos = index( $ruler, $cross, $pos ) ) > -1 ) {
+    push @pos, $pos;
+    $pos++;
+  }
+  push @pos, length( $ruler ); # treat the eol as another column boundary
+
+  # cleanup @pos: on immediately consecutive entries can drop the second one
+  my $last = 0;
+  my @newpos = ();
+  foreach my $i ( 0 .. $#pos ) {
+    my $this = $pos[ $i ];
+    push @newpos, $this
+      unless ( ($this-$last) == 1 );
+    $last = $this;
+  }
+  @pos = @newpos;
+
+  return ( $format, $header, $first_data, @pos );
 }
+
 
 
 =item read_simple

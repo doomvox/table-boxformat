@@ -18,10 +18,11 @@ my  $DEBUG   = 1;          # TODO revise before shipping
 use 5.10.0;  # time to start saying 'say'
 use Carp;
 use Data::Dumper;
-use utf8::all;
 use Data::BoxFormat::Unicode::CharClasses ':all'; # IsHor IsCross IsDelim
 
+use utf8::all;
 
+=encoding utf8
 
 =head1 SYNOPSIS
 
@@ -232,8 +233,20 @@ has delimiter_re  => ( is => 'rw', isa => RegexpRef,
                             }xms } );
 
 
+### TODO extend this so that spaces are included with IsHor.
+###      (1) in the CharClasses module (2) using that experimental perl feature...
+# has horizontal_re => ( is => 'rw', isa => RegexpRef,
+#                        default => sub{ qr{ ^ \p{IsHor}+  $ }x } );
+
 has horizontal_re => ( is => 'rw', isa => RegexpRef,
-                       default => sub{ qr{ ^ \p{IsHor}+  $ }x } );
+                       default =>
+                       sub{
+                         qr{ ^
+                             [ \p{IsHor} \s ] +
+                             $
+                            }x
+                          }
+                     );
 
 # TODO not used: wanted to know which kind of cross it is
 has cross_re  => ( is => 'rw', isa => RegexpRef,
@@ -277,7 +290,7 @@ sub read_dbox {
 
   my $input_data    = $self->input_data;
   my $horizontal_re = $self->horizontal_re;
-  my $delimiter_re  = $self->delimiter_re;
+  # my $delimiter_re  = $self->delimiter_re;
 
   my $cross_re      = $self->cross_re;
 
@@ -285,6 +298,7 @@ sub read_dbox {
   my $right_edge_re = $self->right_edge_re;
 
   my %meta; # as we understand what kind of data we're looking at, stash info here
+            # TODO note: currently just a "format" field.  Simplify?
 
   # First we scan ahead looking for a header ruler
   # (first or third line for mysql, second line for postgres),
@@ -295,43 +309,65 @@ sub read_dbox {
 
   # we use the crosses in the horizontal ruler line to identify column boundaries
   my (@pos, $first_data, $header);
+  #  foreach my $i ( 0 .. $#lines ) {
+  my $ruler;
  RULERSCAN:
-  foreach my $i ( 0 .. $#lines ) {
+  foreach my $i ( 1 .. 2 ) { # ruler lines are always near top
     my $line = $lines[ $i ];
 
-    if( $line =~ m{ $horizontal_re }x ) {
+    if( $line =~ m{ $horizontal_re }x ) { ## TODO rename this pattern?  (and *_re to *_pat)
+      # TODO move this to a routine of it's own, args: $line and $i
+      $ruler = $line;
+      # $meta{ ruler_loc } = $i;
 
-      if( $i == 0 ) {
-        $meta{ ruler_loc } = 'mysql';
+      if( $i == 2 ) {
+        $meta{ format } = 'mysql';
         $header = 1;
         $first_data = 3;
       } elsif ( $i == 1 ) {
-        $meta{ ruler_loc } = 'postgres';
         $header = 0;
         $first_data = 2;
+        if( $ruler =~ $cross_re ) {
+          $meta{ format } = 'postgres';
+        } else {
+          $meta{ format } = 'sqlite';
+        }
       }
 
       # on mysql-style, we strip leading and trailing crosses
       if(
-         $line =~ s{ ^ $cross_re  }{}xms &&
-         $line =~ s{ $cross_re $  }{}xms
+         $ruler =~ s{ ^ $cross_re  }{}xms &&
+         $ruler =~ s{ $cross_re $  }{}xms
         ) {
-        $meta{ boundary_style } = 'mysql';
+        warn "ruler line terminated by crosses is expected to be mysql"
+          unless( $meta{ format } eq 'mysql' )
       } else {
-        $meta{ boundary_style } = 'postgres';
+        warn "ruler line was not terminated by crosses, but not postgres or sqlite"
+          unless( ( $meta{ format } eq 'postgres') || ( $meta{ format } eq 'sqlite' ))
       }
 
-      # TODO identifying type of cross could be combined with match to find horizontal rule
+      # TODO identifying the cross could be combined with match to find horizontal rule
       my %cross_candidates =
         ( "\N{PLUS SIGN}"                                  => 'ascii',      # ye olde '+'
-          "\N{BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL}" => 'unicode', ); # newfangled '┼'
+          "\N{BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL}" => 'unicode',    # newfangled '┼'
+          " "                                              => 'spaces',
+        );
 
       my $cross;
       foreach my $candy ( keys %cross_candidates ) {
         my $pat = '\\' . $candy;  # need to backwhack the + char
-        if ( $line =~ m{ $pat }x ) {
+
+        if( $candy eq ' ' ) {
+          $pat = qr{ \s{1,2} }x;
+        }
+
+        if ( $ruler =~ m{ $pat }x ) {
           $cross = $candy;
-          $meta{ encoding } = $cross_candidates{ $candy };
+          # $meta{ encoding } = $cross_candidates{ $candy };
+
+          # TODO this is getting silly, no?
+          $meta{ format } .= '_' . 'unicode' if  $cross_candidates{ $candy } eq 'unicode';
+
         }
       }
 
@@ -339,28 +375,44 @@ sub read_dbox {
       #    o  it can't use a regexp: it's limited to character matches.
       #    o  returns -1 on failure (what's wrong with undef?)
       my $pos = 0;
-      while( ( $pos = index( $line, $cross, $pos ) ) > -1 ) {
+      while( ( $pos = index( $ruler, $cross, $pos ) ) > -1 ) {
         push @pos, $pos;
         $pos++;
       }
-      push @pos, length( $line ); # treat the eol as another column boundary
+      push @pos, length( $ruler ); # treat the eol as another column boundary
+
+      # cleanup @pos: on immediately consecutive entries can drop the second one
+      my $last = 0;
+      my @newpos = ();
+      foreach my $i ( 0 .. $#pos ) {
+        my $this = $pos[ $i ];
+        push @newpos, $this
+          unless ( ($this-$last) == 1 );
+        $last = $this;
+      }
+      @pos = @newpos;
+
       last RULERSCAN;
     }
   }
+  croak "no horizontal rule line found: is this really db output data box format?"
+    unless $ruler;
 
-  $meta{ format } = $self->guess_format( \%meta );
+  # todo re-write or drop:
+  #  $meta{ format } = $self->guess_format( \%meta );
 
  # read in header and data lines now that we know where the boundaries are.
- LINE:
+# line:
   my $last_data = $#lines;
-  $last_data -= 1 if $meta{ boundary_style } eq 'mysql';  # to skip that ruler line at bottom
+  $last_data -= 1 if $meta{ format } eq 'mysql';  # to skip that ruler line at bottom
   foreach my $i ( $header, $first_data .. $last_data ) {
     my $line = $lines[ $i ];
 #     # strip leading and trailing whitespace
 #     $line =~ s{ ^ \s*        }{}xms;
 #     $line =~ s{   \s* $      }{}xms;
 
-    if( $meta{ boundary_style } eq 'mysql' ) {
+#    if( $meta{ boundary_style } eq 'mysql' ) {
+    if( $meta{ format } eq 'mysql' ) {
       # convert to postqres-style lines by trimming the borders
       $line =~ s{ $left_edge_re  }{}xms;
       $line =~ s{ $right_edge_re }{}xms;
@@ -370,7 +422,8 @@ sub read_dbox {
     my $beg = 0;
     foreach my $pos ( @pos ) {
       my $val =
-        substr( $line, $beg, ($pos-$beg-1) );  # TODO why not use unpack?
+#        substr( $line, $beg, ($pos-$beg-1) );  # todo why not use unpack?
+        substr( $line, $beg, ($pos-$beg) );  # todo why not use unpack?
       # strip leading and trailing spaces
       $val =~ s/^\s+//;
       $val =~ s/\s+$//;

@@ -45,6 +45,11 @@ use Data::BoxFormat::Unicode::CharClasses ':all'; # IsHor IsCross IsDelim
    $dbx->read2tsv( '/tmp/select_result.dbox', '/tmp/select_result.tsv' );
 
 
+   # input dbox from a string, output directly to a tsv file
+   $dbx = Data::BoxFormat->new( input_data => $dbox_string );
+   $dbx->read2tsv( $output_tsv_file );
+
+
 =head1 DESCRIPTION
 
 Data::BoxFormat is a module to work with data in the tabular text
@@ -235,30 +240,30 @@ Example usage:
 =cut
 
 sub slurp_input_data {
- my $self = shift;
+  my $self = shift;
 
- # the input file can be defined at the object level, or supplied as an argument
- # if it's an argument, the given value will be stored in the object level
- my $input_file;
- if( $_[0] ) {
-   $input_file = shift;
-   $self->input_file( $input_file );
- } else {
-   $input_file = $self->input_file;
- }
+  # the input file can be defined at the object level, or supplied as an argument
+  # if it's an argument, the given value will be stored in the object level
+  my $input_file;
+  if ( $_[0] ) {
+    $input_file = shift;
+    $self->input_file( $input_file );
+  } else {
+    $input_file = $self->input_file;
+  }
 
- croak "Need an input file to read a dbox from" unless( $input_file );
- my $input_encoding = $self->input_encoding;
- unless ( $input_file ) {
-   croak
-     "Needs either an input data file name ('input_file'), " .
-     "or a multiline string ('input_data')  ";
- }
- my $in_enc = "<:encoding($input_encoding)";
- open my $fh, $in_enc, $input_file or croak "$!";
- local $/; # localized slurp mode
- my $data = <$fh>;
- return $data;
+  croak "Need an input file to read a dbox from" unless( $input_file );
+  my $input_encoding = $self->input_encoding;
+  unless ( $input_file ) {
+    croak
+      "Needs either an input data file name ('input_file'), " .
+      "or a multiline string ('input_data')  ";
+  }
+  my $in_enc = "<:encoding($input_encoding)";
+  open my $fh, $in_enc, $input_file or croak "$!";
+  local $/; # localized slurp mode
+  my $data = <$fh>;
+  return $data;
 }
 
 
@@ -292,9 +297,7 @@ sub read_dbox {
   if( $_[0] ) {
     $input_file = shift;
     $self->input_file( $input_file );
-  } else {
-   $input_file = $self->input_file;
- }
+  }
 
   my $input_data     = $self->input_data;
   my $ruler_line_pat = $self->ruler_line_pat;
@@ -366,17 +369,17 @@ to determine column widths and the dbox format.
 
 Returns an ordered list like so:
 
- $format
+ format:
    'mysql', 'postgres', 'postgres_unicode', 'sqlite'
 
- $header
-   row number: 0 or 1
+ header location:
+   a row number: 0 or 1
 
- $first_data
-   row number where data begins:  2 or 3
+ first_data:
+   the row number where data begins:  2 or 3
 
- @pos
-   list of column boundary positions
+ positions:
+   a list of column boundary positions
 
 
 Example usage:
@@ -489,6 +492,14 @@ in the object's L<header>.
 sub read_simple {
   my $self = shift;
 
+  # the input file can be defined at the object level, or supplied as an argument
+  # if it's an argument, the given value will be stored in the object level
+  my $input_file;
+  if( $_[0] ) {
+    $input_file = shift;
+    $self->input_file( $input_file );
+  }
+
   my $input_data    = $self->input_data;
   # my $ruler_line_pat = $self->ruler_line_pat;
   my $separator_pat  = $self->separator_pat;
@@ -543,12 +554,32 @@ sub read_simple {
 A convenience method that runs L<read_dbox> and writes the data
 to a tsv file specified by the given argument.
 
+Example usage:
+
+  $dbx->read2tsv( $input_dbox_file, $output_tsv_file );
+
+Or:
+
+  $dbx = Data::BoxFormat->new( input_file => $input_dbox_file );
+  $dbx->read2tsv( $output_tsv_file );
+
+Or:
+
+  $dbx = Data::BoxFormat->new( input_data => $dbox_string );
+  $dbx->read2tsv( $output_tsv_file );
+
 =cut
 
 # TODO if no output_file is supplied as argument, could fall back
 #      to using the input_file with extension changed to "tsv".
 sub read2tsv {
   my $self = shift;
+
+  my $input_file;
+  if( scalar( @_ ) == 2 ) {
+    $input_file = shift;
+    $self->input_file( $input_file );
+  }
 
   my $output_file = shift;
   unless( $output_file ) {
@@ -583,17 +614,14 @@ As implemented, this presumes the entire data set can be held in memory.
 Future versions may be more stream-oriented: there's no technical reason
 this couldn't be done.
 
-=head2 delimiters in data could confuse things
-
-If delimiter characters (e.g. a veritcal bar) are present in a
-string in the data, that could confuse the simple version of
-parsing that this does (particularly if the embedded delimiter
-char was bracketed by whitespace).
-
 =head2 what you get is what you get
 
-This only covers three input formats, and isn't easily extensible
-to handle any others.  A plugin system (ala DBI/DBD) would be overkill.
+This code is only guaranteed to cover input formats from mysql, psql
+and some from sqlite3.  It may work with other databases, but
+hasn't been tested.
+
+At present it is not easily extensible (implementing a plugin
+system ala DBI/DBD seemed like overkill).
 
 =head2 sqlite3
 
@@ -603,8 +631,8 @@ only a variation with these settings:
   .header on
   .mode column
 
-The output format in sqlite3 is very flexible, but unfortunately
-the default output is not very useable:
+While sqlite3 is very flexible, unfortunately the default output
+does not seem very useable:
 
   SELECT * from expensoids;
   |2010-09-01|factory|146035.0
@@ -633,7 +661,7 @@ That yields output that looks like this:
   3           2010-11-01  factory     218866.0
 
 That's very similar to the psql format using "\pset border 0"
-(which has one space column breaks instead of two) and
+(which has one space column breaks instead of two):
 both are supported by L<read_dbox> using the L<analyze_ruler>
 routine.
 

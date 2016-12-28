@@ -30,44 +30,32 @@ use Data::BoxFormat::Unicode::CharClasses ':all'; # IsHor IsCross IsDelim
    my $data = $dbx->read_dbox(); # array of arrays, header in first row
 
 
-   # Input from a string
+   # Or just supply input file name to the method
+   my $dbx = Data::BoxFormat->new();
+   my $data = $dbx->read_dbox( $input_file_name );
+
+
+   # Input dbox from a string
    my $dbx = Data::BoxFormat->new( input_data => $dboxes_string );
    my $data = $dbx->read_dbox();
 
 
    # input from dbox file, output directly to a tsv file
-   my $dbx = Data::BoxFormat->new( input_file  => '/tmp/select_result.dbox' );
-   $dbx->read2tsv( '/tmp/select_result.tsv' );
-
-   # TODO test this
-   # Use just a unicode character as sepatator via a custom
-   # parsing regexp (this allows '|' in string values).
-   my $dbx =
-      Data::BoxFormat->new( input_file => '/tmp/select_result.dbox',
-                        separator_pat =>
-                          sub{ qr{
-                                \s+
-                                 \N{BOX DRAWINGS LIGHT VERTICAL}
-                                    {1,1}
-                                \s+
-                              }xms } );
-   my $data = $dbx->read_dbox(); # array of arrays, header in first row
-
-
+   my $dbx = Data::BoxFormat->new();
+   $dbx->read2tsv( '/tmp/select_result.dbox', '/tmp/select_result.tsv' );
 
 
 =head1 DESCRIPTION
 
 Data::BoxFormat is a module to work with data in the tabular text
 format(s) commonly used in database client shells (postgresql's
-"psql", mysql's "mysql", etc), where a SELECT will typical display
-data in a form such as this (mysql):
+"psql", mysql's "mysql", or sqlite's "sqlite3"),
+where a SELECT will typical display data in a form such as this (mysql):
 
   +-----+------------+---------------+-------------+
   | id  | date       | type          | amount      |
   +-----+------------+---------------+-------------+
   |  11 | 2010-09-01 | factory       |   146035.00 |
-  |  12 | 2010-10-01 | factory       |   208816.00 |
   |  15 | 2011-01-01 | factory       |   191239.00 |
   |  16 | 2010-09-01 | marketing     |   467087.00 |
   |  17 | 2010-10-01 | marketing     |   409430.00 |
@@ -78,7 +66,6 @@ Or this (postgresql's "ascii" form):
    id |    date    |   type    | amount
   ----+------------+-----------+--------
     1 | 2010-09-01 | factory   | 146035
-    2 | 2010-10-01 | factory   | 208816
     4 | 2011-01-01 | factory   | 191239
     6 | 2010-09-01 | marketing | 467087
     7 | 2010-10-01 | marketing | 409430
@@ -130,23 +117,24 @@ Takes a list of attribute/setting pairs as an argument.
 
 =over
 
-=item input_file
-
-File to input data from.  Only required if L<input_data> was not
-defined directly.
-
 =item input_encoding
 
 Default's to "UTF-8".  Change to suit text encoding (e.g. "ISO-8859-1").
 Must work as a perl ":encoding(...)" layer.
 
-=item input_data
-
-SQL SELECT output in the fixed-width-plus-delimiter form discussed above.
-
 =item output_encoding
 
 Like L<input_encoding>.  Default: "UTF-8".
+
+=item input_file
+
+File to input data from.  Can be supplied later, e.g. when
+L<read_dbox> is called.  Only required if L<input_data> was
+not defined directly.
+
+=item input_data
+
+SQL SELECT output in the fixed-width-plus-delimiter form discussed above.
 
 =item the parsing regular expressions (type: RegexpRef)
 
@@ -164,7 +152,7 @@ header line)
 =item cross_pat
 
 Match cross marks the horizontal bars typically use to mark
-column boundaries (not yet in use).
+column boundaries.
 
 =item left_edge_pat
 
@@ -180,40 +168,20 @@ Right border delimiters (we strip these before processing).
 
 =cut
 
-# Example attribute:
-# has is_loop => ( is => 'rw', isa => Int, default => 0 );
-
-# input file name (can skip if input_data is defined directly)
-has input_file  => ( is => 'rw', isa => Str, default => "" );
-
-# input encoding defaults to utf-8 (might need to change, e.g. ISO-8859-1)
-has input_encoding => ( is => 'rw', isa => Str, default => 'UTF-8' );
-
-# # only used by read2tsv (at present)
-# has output_file     => ( is => 'rw', isa => Str, default => "" );
-# ### TODO lazy default, generate from the input_file, change extension to tsv
-
+# encodings default to utf-8 (might need to change, e.g. ISO-8859-1)
+has input_encoding  => ( is => 'rw', isa => Str, default => 'UTF-8' );
 has output_encoding => ( is => 'rw', isa => Str, default => 'UTF-8' );
+
+# input file name (can skip if input_data is defined directly, or if file provided later)
+has input_file  => ( is => 'rw', isa => Str, default => "" );
 
 # can define input data directly, or alternately slurp it in from a file
 #    TODO better to avoid slurping, work line-at-a-time?
 has input_data  => ( is => 'rw', isa => Str,
-           default =>
-             sub { my $self = shift;
-                   my $input_file = $self->input_file;
-                   my $input_encoding = $self->input_encoding;
-                    unless ( $input_file ) {
-                     croak
-                       "Needs either an input data file name ('input_file'), " .
-                       "or a multiline string ('input_data')  ";
-                   }
-                   my $in_enc = "<:encoding($input_encoding)";
-                   open my $fh, $in_enc, $input_file or croak "$!";
-                   local $/; # localized slurp mode
-                   my $data = <$fh>;
-                   return $data;
-                 },
-            lazy => 1 );
+                     default =>
+                     sub { my $self = shift;
+                           $self->slurp_input_data; },
+                     lazy => 1 );
 
 has header => ( is => 'rw', isa => ArrayRef, default => sub{ [] } );
 
@@ -242,7 +210,6 @@ has ruler_line_pat => ( is => 'rw', isa => RegexpRef,
                           }
                      );
 
-# TODO not used: need to know which kind of cross it is
 has cross_pat  => ( is => 'rw', isa => RegexpRef,
                        default =>
                        sub{ qr{
@@ -256,6 +223,45 @@ has left_edge_pat => ( is => 'rw', isa => RegexpRef,
 
 has right_edge_pat => ( is => 'rw', isa => RegexpRef,
                        default => sub{ qr{ [\|] \s* $ }xms } );
+
+
+
+=item slurp_input_data
+
+Example usage:
+
+  $self->slurp_input_data( $input_file_name );
+
+=cut
+
+sub slurp_input_data {
+ my $self = shift;
+
+ # the input file can be defined at the object level, or supplied as an argument
+ # if it's an argument, the given value will be stored in the object level
+ my $input_file;
+ if( $_[0] ) {
+   $input_file = shift;
+   $self->input_file( $input_file );
+ } else {
+   $input_file = $self->input_file;
+ }
+
+ croak "Need an input file to read a dbox from" unless( $input_file );
+ my $input_encoding = $self->input_encoding;
+ unless ( $input_file ) {
+   croak
+     "Needs either an input data file name ('input_file'), " .
+     "or a multiline string ('input_data')  ";
+ }
+ my $in_enc = "<:encoding($input_encoding)";
+ open my $fh, $in_enc, $input_file or croak "$!";
+ local $/; # localized slurp mode
+ my $data = <$fh>;
+ return $data;
+}
+
+
 
 
 =item read_dbox
@@ -280,11 +286,18 @@ in the object's L<header>, and puts some format metadata in the object's L<meta>
 sub read_dbox {
   my $self = shift;
 
-  my $input_data    = $self->input_data;
-  my $ruler_line_pat = $self->ruler_line_pat;
-  # my $separator_pat  = $self->separator_pat;
+  # the input file can be defined at the object level, or supplied as an argument
+  # if it's an argument, the given value will be stored in the object level
+  my $input_file;
+  if( $_[0] ) {
+    $input_file = shift;
+    $self->input_file( $input_file );
+  } else {
+   $input_file = $self->input_file;
+ }
 
-  # my $cross_pat      = $self->cross_pat;
+  my $input_data     = $self->input_data;
+  my $ruler_line_pat = $self->ruler_line_pat;
 
   my $left_edge_pat  = $self->left_edge_pat;
   my $right_edge_pat = $self->right_edge_pat;
@@ -293,14 +306,13 @@ sub read_dbox {
 
   # look for a header ruler line
   # (first or third line for mysql, second line for postgres),
-
-  my (@pos, $format, $first_data, $header, $ruler, @data);
+  my (@pos, $format, $first_data, $header_loc, $ruler, @data);
  RULERSCAN:
   foreach my $i ( 1 .. 2 ) { # ruler lines are always near top
     my $line = $lines[ $i ];
 
     if( $line =~ m{ $ruler_line_pat }x ) { ## TODO rename this pattern?
-      ( $format, $header, $first_data, @pos ) = $self->analyze_ruler( $line, $i );
+      ( $format, $header_loc, $first_data, @pos ) = $self->analyze_ruler( $line, $i );
       last RULERSCAN;
     }
   }
@@ -309,10 +321,10 @@ sub read_dbox {
     croak "no horizontal rule line found: is this really db output data box format?"
   }
 
- # read in header and data lines now that we know where the column boundaries are.
+  # read data (with header) now that we know where things are
   my $last_data = $#lines;
   $last_data -= 1 if $format eq 'mysql';  # to skip that ruler line at bottom
-  foreach my $i ( $header, $first_data .. $last_data ) {
+  foreach my $i ( $header_loc, $first_data .. $last_data ) {
     my $line = $lines[ $i ];
 
     if( $format eq 'mysql' ) {
@@ -325,7 +337,7 @@ sub read_dbox {
     my $beg = 0;
     foreach my $pos ( @pos ) {
       my $val =
-        substr( $line, $beg, ($pos-$beg) );  # todo why not use unpack?
+        substr( $line, $beg, ($pos-$beg) );  # TODO why not use unpack?
       # strip leading and trailing spaces
       $val =~ s/^\s+//;
       $val =~ s/\s+$//;
@@ -350,7 +362,7 @@ sub read_dbox {
 =item analyze_ruler
 
 Internal method that analyzes the given ruler line and location
-to determine column widths and also the info about the dbox format.
+to determine column widths and the dbox format.
 
 Returns an ordered list like so:
 
@@ -369,7 +381,7 @@ Returns an ordered list like so:
 
 Example usage:
 
-  ( $format, $header, $first_data, @pos ) = $self->analyze_ruler( $line, $i );
+  ( $format, $header_loc, $first_data, @pos ) = $self->analyze_ruler( $line, $i );
 
 =cut
 
@@ -380,14 +392,14 @@ sub analyze_ruler {
 
   my $cross_pat      = $self->cross_pat;
 
-  my ( $format, $header, $first_data, @pos );
+  my ( $format, $header_loc, $first_data, @pos );
 
   if ( $ruler_loc == 2 ) {
     $format = 'mysql';
-    $header = 1;
+    $header_loc = 1;
     $first_data = 3;
   } elsif ( $ruler_loc == 1 ) {
-    $header = 0;
+    $header_loc = 0;
     $first_data = 2;
     if ( $ruler =~ $cross_pat ) {
       $format = 'postgres';
@@ -449,7 +461,7 @@ sub analyze_ruler {
   }
   @pos = @newpos;
 
-  return ( $format, $header, $first_data, @pos );
+  return ( $format, $header_loc, $first_data, @pos );
 }
 
 
@@ -583,46 +595,31 @@ char was bracketed by whitespace).
 This only covers three input formats, and isn't easily extensible
 to handle any others.  A plugin system (ala DBI/DBD) would be overkill.
 
-=head2 sqlite
+=head2 sqlite3
 
-This code does not support the output from sqlite.
-Let me explain why (so I'll stop thinking about adding it):
+This code does not support the default output from sqlite3,
+only a variation with these settings:
 
-The output format in sqlite3 is actually fairly flexible,
-it has a number of different customization settings.
-The obvious thing to want to support though, is the default format,
-which looks like this:
+  .header on
+  .mode column
+
+The output format in sqlite3 is very flexible, but unfortunately
+the default output is not very useable:
 
   SELECT * from expensoids;
   |2010-09-01|factory|146035.0
-  |2010-10-01|factory|208816.0
   |2010-11-01|factory|218866.0
-  |2010-12-01|factory|191239.0
   |2011-01-01|factory|191239.0
-  |2010-09-01|marketing|467087.0
   |2010-10-01|marketing|409430.0
 
-This is delimited by an ascii vertical bar, but without any
-bracketing spaces, and without any attempt at using fixed width
-columns.  Note that the left edge has a vertical bar, but the
-right edge does not.  Perhaps the most annoying feature from my
-point of view though, is that there is no header: it's easy
-enough to write code that assumes that there will never be a
-header, and to just leave the header row blank, but if I were
-actually working with sqlite a lot I would turn on the header
-display:
+This is separated by the traditional ascii vertical bar, but
+without the usual bracketing spaces, and without any attempt at
+using fixed width columns.  Somewhat oddly, the left edge has a
+vertical bar, but the right edge does not, but worse there's
+no header that provides column labels.
 
-  .header on
-
-Trying to distguish whether the first row is a header is not
-something I'd want try to do from textual analysis, but adding
-some other way of doing it is not something I want to bother with
-just to support sqlite.  So the question would be: should I assume
-the default format, or the format I'm more likely to use?
-
-But if I *were* working with sqlite a lot I wouldn't stop with
-turning on the header, I'd probably use the mode column setting
-also:
+If I were actually working with sqlite a lot I would turn on
+the header display and switch to fixed-width columns:
 
   .header on
   .mode column
@@ -635,17 +632,10 @@ That yields output that looks like this:
   2           2010-10-01  factory     208816.0
   3           2010-11-01  factory     218866.0
 
-And that's sufficiently different from everything else in the
-world, and far enough away from the sqlite default most people
-are likely to use, that I'm going to give up on this entirely.
-
-One of the problems here for me is that I simply don't work with
-sqlite very much (why would you, when you could be using
-postgresql?), so I'm resolving to not think about this again.
-
-=head1 ACKNOWLEDGEMENTS
-
-I stand on the shoulders of leprechauns.
+That's very similar to the psql format using "\pset border 0"
+(which has one space column breaks instead of two) and
+both are supported by L<read_dbox> using the L<analyze_ruler>
+routine.
 
 =head1 COPYRIGHT AND LICENSE
 

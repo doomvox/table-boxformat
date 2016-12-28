@@ -14,13 +14,11 @@ Version 0.01
 
 our $VERSION = '0.01';
 my  $DEBUG   = 1;          # TODO revise before shipping
-# use 5.008;
 use 5.10.0;  # time to start saying 'say'
+use utf8::all;
 use Carp;
 use Data::Dumper;
 use Data::BoxFormat::Unicode::CharClasses ':all'; # IsHor IsCross IsDelim
-
-use utf8::all;
 
 =encoding utf8
 
@@ -29,12 +27,12 @@ use utf8::all;
    use Data::BoxFormat;
    # Reading input from a "dbox" temp file
    my $dbx = Data::BoxFormat->new( input_file => '/tmp/select_result.dbox' );
-   my $data = $dbx->read(); # array of arrays, header in first row
+   my $data = $dbx->read_dbox(); # array of arrays, header in first row
 
 
    # Input from a string
    my $dbx = Data::BoxFormat->new( input_data => $dboxes_string );
-   my $data = $dbx->read();
+   my $data = $dbx->read_dbox();
 
 
    # input from dbox file, output directly to a tsv file
@@ -46,14 +44,14 @@ use utf8::all;
    # parsing regexp (this allows '|' in string values).
    my $dbx =
       Data::BoxFormat->new( input_file => '/tmp/select_result.dbox',
-                        delimiter_re =>
+                        separator_pat =>
                           sub{ qr{
                                 \s+
                                  \N{BOX DRAWINGS LIGHT VERTICAL}
                                     {1,1}
                                 \s+
                               }xms } );
-   my $data = $dbx->read(); # array of arrays, header in first row
+   my $data = $dbx->read_dbox(); # array of arrays, header in first row
 
 
 
@@ -154,26 +152,25 @@ Like L<input_encoding>.  Default: "UTF-8".
 
 =over
 
-=item delimiter_re
+=item separator_pat
 
 The column separators (vertical bar)
-TODO rename this: separator, not delimiter.
 
-=item horizontal_re
+=item ruler_line_pat
 
 Matches the Horizontal ruler lines (typically just under the
 header line)
 
-=item cross_re
+=item cross_pat
 
 Match cross marks the horizontal bars typically use to mark
 column boundaries (not yet in use).
 
-=item left_edge_re
+=item left_edge_pat
 
 Left border delimiters (we strip these before processing).
 
-=item right_edge_re
+=item right_edge_pat
 
 Right border delimiters (we strip these before processing).
 
@@ -225,9 +222,7 @@ has format => ( is => 'rw', isa => Str,    default => sub{ '' } );
 # info about format/style of last data read
 has meta   => ( is => 'rw', isa => HashRef,  default => sub{ {} } );
 
-
-# TODO don't *really* want mix-and-match delims, it's one or the other throughout.
-has delimiter_re  => ( is => 'rw', isa => RegexpRef,
+has separator_pat  => ( is => 'rw', isa => RegexpRef,
                        default =>
                        sub{ qr{
                                 \s+         # require leading whitespace
@@ -236,7 +231,8 @@ has delimiter_re  => ( is => 'rw', isa => RegexpRef,
                                 \s+         # require trailing whitespace
                             }xms } );
 
-has horizontal_re => ( is => 'rw', isa => RegexpRef,
+# horizontal dashes plus crosses or whitespace
+has ruler_line_pat => ( is => 'rw', isa => RegexpRef,
                        default =>
                        sub{
                          qr{ ^
@@ -246,8 +242,8 @@ has horizontal_re => ( is => 'rw', isa => RegexpRef,
                           }
                      );
 
-# TODO not used: wanted to know which kind of cross it is
-has cross_re  => ( is => 'rw', isa => RegexpRef,
+# TODO not used: need to know which kind of cross it is
+has cross_pat  => ( is => 'rw', isa => RegexpRef,
                        default =>
                        sub{ qr{
                                 \p{IsCross}
@@ -255,10 +251,10 @@ has cross_re  => ( is => 'rw', isa => RegexpRef,
                             }xms } );
 
 # To match table borders (e.g. mysql-style)
-has left_edge_re => ( is => 'rw', isa => RegexpRef,
+has left_edge_pat => ( is => 'rw', isa => RegexpRef,
                        default => sub{ qr{ ^ \s* [\|] }xms } );
 
-has right_edge_re => ( is => 'rw', isa => RegexpRef,
+has right_edge_pat => ( is => 'rw', isa => RegexpRef,
                        default => sub{ qr{ [\|] \s* $ }xms } );
 
 
@@ -270,45 +266,40 @@ convert it into an array of arrays.
    my $data =
          $bxs->read_dbox();
 
-Goes through the boxdata slurped into the object field input_data,
-returns it as an array of arrays, including the field names in
-the first row.
+Converts the boxdata from the object's input_data into an array
+of arrays, with the field names included in the first row.
 
 As a side-effect, copies the header (first row of returned data)
 in the object's L<header>, and puts some format metadata in the object's L<meta>.
 
 =cut
 
-# Experimental version:
-# Uses the header ruler cross locations to identify the column boundaries
-# Treats data lines as fixed-width fields, to handle the case of strings
-# with embedded separator characters.
+# Uses the header ruler cross locations to identify the column boundaries,
+# then treats the data as fixed-width fields, to handle the case
+# of strings with embedded separator characters.
 sub read_dbox {
   my $self = shift;
 
   my $input_data    = $self->input_data;
-  my $horizontal_re = $self->horizontal_re;
-  # my $delimiter_re  = $self->delimiter_re;
+  my $ruler_line_pat = $self->ruler_line_pat;
+  # my $separator_pat  = $self->separator_pat;
 
-  # my $cross_re      = $self->cross_re;
+  # my $cross_pat      = $self->cross_pat;
 
-  my $left_edge_re  = $self->left_edge_re;
-  my $right_edge_re = $self->right_edge_re;
+  my $left_edge_pat  = $self->left_edge_pat;
+  my $right_edge_pat = $self->right_edge_pat;
 
-  # First we scan ahead looking for a header ruler
-  # (first or third line for mysql, second line for postgres),
-  # then we split lines on the column boundaries (the crosses in header)
   my @lines = split /\n/, $input_data;
 
-  my ( @data, @dividers );
+  # look for a header ruler line
+  # (first or third line for mysql, second line for postgres),
 
-  # we use the crosses in the horizontal ruler line to identify column boundaries
-  my (@pos, $format, $first_data, $header, $ruler);
+  my (@pos, $format, $first_data, $header, $ruler, @data);
  RULERSCAN:
   foreach my $i ( 1 .. 2 ) { # ruler lines are always near top
     my $line = $lines[ $i ];
 
-    if( $line =~ m{ $horizontal_re }x ) { ## TODO rename this pattern?  (and *_re to *_pat)
+    if( $line =~ m{ $ruler_line_pat }x ) { ## TODO rename this pattern?
       ( $format, $header, $first_data, @pos ) = $self->analyze_ruler( $line, $i );
       last RULERSCAN;
     }
@@ -326,8 +317,8 @@ sub read_dbox {
 
     if( $format eq 'mysql' ) {
       # convert to postqres-style lines by trimming the borders
-      $line =~ s{ $left_edge_re  }{}xms;
-      $line =~ s{ $right_edge_re }{}xms;
+      $line =~ s{ $left_edge_pat  }{}xms;
+      $line =~ s{ $right_edge_pat }{}xms;
     }
 
     my @vals;
@@ -387,7 +378,7 @@ sub analyze_ruler {
   my $ruler      = shift;
   my $ruler_loc  = shift;
 
-  my $cross_re      = $self->cross_re;
+  my $cross_pat      = $self->cross_pat;
 
   my ( $format, $header, $first_data, @pos );
 
@@ -398,7 +389,7 @@ sub analyze_ruler {
   } elsif ( $ruler_loc == 1 ) {
     $header = 0;
     $first_data = 2;
-    if ( $ruler =~ $cross_re ) {
+    if ( $ruler =~ $cross_pat ) {
       $format = 'postgres';
     } else {
       $format = 'sqlite';
@@ -407,8 +398,8 @@ sub analyze_ruler {
 
   if ( $format eq 'mysql' ) {
     unless (
-            $ruler =~ s{ ^ $cross_re  }{}xms &&
-            $ruler =~ s{ $cross_re $  }{}xms
+            $ruler =~ s{ ^ $cross_pat  }{}xms &&
+            $ruler =~ s{ $cross_pat $  }{}xms
            ) {
       warn "mysql format, but ruler line was not terminated by crosses"
     }
@@ -465,13 +456,13 @@ sub analyze_ruler {
 
 =item read_simple
 
-DEPRECATED
+This is DEPRECATED.  See L<read_dbox>.
 
 Given data in tabular boxes from a multiline string,
 convert it into an array of arrays.
 
    my $data =
-         $bxs->read();
+         $bxs->read_simple();
 
 Goes through the boxdata slurped into the object field input_data,
 returns it as an array of arrays, including the field names in
@@ -487,22 +478,19 @@ sub read_simple {
   my $self = shift;
 
   my $input_data    = $self->input_data;
-  my $horizontal_re = $self->horizontal_re;  # intended to skip these... TODO
-  my $delimiter_re  = $self->delimiter_re;
+  # my $ruler_line_pat = $self->ruler_line_pat;
+  my $separator_pat  = $self->separator_pat;
 
   # before we split on delimiters, trim the left and right borders (if any)
   # (converts mysql-style lines into psql-style lines)
-   my $left_edge_re  = $self->left_edge_re;
-   my $right_edge_re = $self->right_edge_re;
+   my $left_edge_pat  = $self->left_edge_pat;
+   my $right_edge_pat = $self->right_edge_pat;
 
-# BUG (?): will never match, because of the \+ stuff
-#    $input_data =~ s{ ^ \s* \+       }{}xmsg;
-#    $input_data =~ s{ \+ \s* $       }{}xmsg;
    $input_data =~ s{ ^ \s*        }{}xmsg;
    $input_data =~ s{   \s* $       }{}xmsg;
 
-   $input_data =~ s{ $left_edge_re  }{}xmsg;
-   $input_data =~ s{ $right_edge_re }{}xmsg;
+   $input_data =~ s{ $left_edge_pat  }{}xmsg;
+   $input_data =~ s{ $right_edge_pat }{}xmsg;
 
   # Here we just look for lines with delimiters on them (skipping
   # anything else) and then split the lines on the delimiters,
@@ -515,7 +503,7 @@ sub read_simple {
     my $line = $lines[ $i ];
 
     # when there's at least one delim, we assume it's a data line
-    if( $line =~ /$delimiter_re/xms ) {
+    if( $line =~ /$separator_pat/xms ) {
 
       no warnings 'uninitialized';
 
@@ -525,7 +513,7 @@ sub read_simple {
 
       # Note: split pattern also eats bracketing whitespace
       my @vals =
-        split /$delimiter_re/, $line;
+        split /$separator_pat/, $line;
 
       # array_of_array format (header treated like any other vals)
       push @data, \@vals;
@@ -533,7 +521,6 @@ sub read_simple {
 
     my @header;
     @header = @{ $data[0] } if @data;
-    # print STDERR Dumper( \@header ), "\n"; # TODO when turned on there's an odd instance in tests where an empty one comes up
     $self->header( \@header );
   }
   return \@data;
@@ -541,8 +528,8 @@ sub read_simple {
 
 =item read2tsv
 
-A convenience method that runs L<read> and writes the data to a
-tsv file specified by the given argument.
+A convenience method that runs L<read_dbox> and writes the data
+to a tsv file specified by the given argument.
 
 =cut
 
@@ -557,7 +544,6 @@ sub read2tsv {
   }
   my $output_encoding = $self->output_encoding;
 
-#  my $data = $self->read;
   my $data = $self->read_dbox;
 
   my $out_enc = ">:encoding($output_encoding)";
@@ -569,9 +555,6 @@ sub read2tsv {
   }
   return 1;
 }
-
-
-
 
 =back
 

@@ -1,4 +1,4 @@
-# Run via 'make test' or 'perl 03-Data-BoxFormat-read_dbox-twocol.t'
+# Run via 'make test' or 'perl 10-Data-BoxFormat-read_dbox-twocol.t'
 
 use strict;
 use warnings;

@@ -42,12 +42,12 @@ use Data::BoxFormat::Unicode::CharClasses ':all'; # IsHor IsCross IsDelim
 
    # input from dbox file, output directly to a tsv file
    my $dbx = Data::BoxFormat->new();
-   $dbx->read2tsv( '/tmp/select_result.dbox', '/tmp/select_result.tsv' );
+   $dbx->output_to_tsv( '/tmp/select_result.dbox', '/tmp/select_result.tsv' );
 
 
    # input dbox from a string, output directly to a tsv file
    $dbx = Data::BoxFormat->new( input_data => $dbox_string );
-   $dbx->read2tsv( $output_tsv_file );
+   $dbx->output_to_tsv( $output_tsv_file );
 
 
 =head1 DESCRIPTION
@@ -549,30 +549,30 @@ sub read_simple {
   return \@data;
 }
 
-=item read2tsv
+=item output_to_tsv
 
 A convenience method that runs L<read_dbox> and writes the data
 to a tsv file specified by the given argument.
 
 Example usage:
 
-  $dbx->read2tsv( $input_dbox_file, $output_tsv_file );
+  $dbx->output_to_tsv( $input_dbox_file, $output_tsv_file );
 
 Or:
 
   $dbx = Data::BoxFormat->new( input_file => $input_dbox_file );
-  $dbx->read2tsv( $output_tsv_file );
+  $dbx->output_to_tsv( $output_tsv_file );
 
 Or:
 
   $dbx = Data::BoxFormat->new( input_data => $dbox_string );
-  $dbx->read2tsv( $output_tsv_file );
+  $dbx->output_to_tsv( $output_tsv_file );
 
 =cut
 
 # TODO if no output_file is supplied as argument, could fall back
 #      to using the input_file with extension changed to "tsv".
-sub read2tsv {
+sub output_to_tsv {
   my $self = shift;
 
   my $input_file;
@@ -583,7 +583,7 @@ sub read2tsv {
 
   my $output_file = shift;
   unless( $output_file ) {
-    croak("read2tsv requires the output_file.");
+    croak("output_to_tsv requires the output_file.");
   }
   my $output_encoding = $self->output_encoding;
 

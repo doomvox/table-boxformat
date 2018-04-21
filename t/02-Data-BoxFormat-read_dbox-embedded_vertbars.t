@@ -43,14 +43,14 @@ my $DAT = "$Bin/dat";
 #   4 | dawn   | |cracked|                                      |    16
 #   7 | gort   | |                                              |    66
 
-  my $expected = [
-          [ 'id', 'name',   'wisdom'                                        , 'score', ],
-          [  '1', 'alfred', 'Slavish imitation | gobs hobbies at mini-minds', '58',    ],
-          [  '2', 'betty',  'Let us retire to the bar: |'                   , '32',    ],
-          [  '4', 'dawn',   '|cracked|'                                     , '16',    ],
-          [  '7', 'gort',   '|'                                             , '66',    ],
-        ];
-
+  my $expected =
+    [
+     [ 'id', 'name',   'wisdom'                                        , 'score', ],
+     [  '1', 'alfred', 'Slavish imitation | gobs hobbies at mini-minds', '58',    ],
+     [  '2', 'betty',  'Let us retire to the bar: |'                   , '32',    ],
+     [  '4', 'dawn',   '|cracked|'                                     , '16',    ],
+     [  '7', 'gort',   '|'                                             , '66',    ],
+    ];
 
   my $format = 'psql';
 

@@ -17,7 +17,7 @@ my $DAT = "$Bin/dat";
    #  /home/doom/End/Cave/SkullPlot/Wall/Data-Boxes/t/dat
 
 {
-  my $test_name = "Testing read2tsv method";
+  my $test_name = "Testing output_to_tsv method";
 
   my $format = 'psql_unicode';
 
@@ -28,7 +28,7 @@ my $DAT = "$Bin/dat";
                      input_file  => $input_file,
                     );
 
-  my $status = $bxs->read2tsv( $output_file ); # output straight to tsv file
+  my $status = $bxs->output_to_tsv( $output_file ); # output straight to tsv file
   is( $status, 1, "$test_name: returns success code" );
 
   my $expected_file = qq{$DAT/expensoids_expected.tsv};

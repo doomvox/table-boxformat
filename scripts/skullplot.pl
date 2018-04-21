@@ -140,34 +140,46 @@ if ( $dependent_spec ) {
   $indie_count = 1;
 }
 
+my ($dbox_name, $tsv_file, $png_file ) =
+  process_dbox_file( $dbox_file, $indie_count, \@header, $working_area );
+
 ($DEBUG) && print "input dbox name: $dbox_name\nintermediate tsv_file: $tsv_file\n";
 
 # input from dbox file, output directly to a tsv file
 my $dbx = Data::BoxFormat->new( input_file  => $dbox_file );
 $dbx->read2tsv( $tsv_file );
 
-my @header = @{ $dbx->header() };
 
+my @header = @{ $dbx->header() };
 
 ### BOOKMARK STET above definitely stays in skullplot.pl
 
-### BEG SUB_CANDIDATE
-# Needs passed in: @header, $indie_count, dbox_file, working_area
-
-# optionally (generate defaults internally) (( TODO )):
+# TODO optionally (generate defaults internally) 
 # $tsv_file, $rscript_file, $png_file
+sub process_dbox_file {
+  my $dbox_file    = shift;
+  my $indie_count  = shift // 1;
+  my $header       = shift;
+  my $working_area = shift;
 
-### generate a tsv file in the working area, along with rscript
-my $dbox_name = basename( $dbox_file );
-( my $tsv_name     = $dbox_name ) =~ s{ \.dbox $ }{.tsv}x;
-( my $rscript_name = $dbox_name ) =~ s{ \.dbox $ }{.r}x;
+  ### generate a tsv file in the working area, along with rscript
+  my $dbox_name = basename( $dbox_file );
+  ( my $tsv_name     = $dbox_name ) =~ s{ \.dbox $ }{.tsv}x;
+  ( my $rscript_name = $dbox_name ) =~ s{ \.dbox $ }{.r}x;
 
-my $tsv_file     = "$working_area/$tsv_name";
-my $rscript_file = "$working_area/$rscript_name";
+  my $tsv_file     = "$working_area/$tsv_name";
+  my $rscript_file = "$working_area/$rscript_name";
 
-( my $png_name     = $dbox_name ) =~ s{ \.dbox $ }{.png}x;
-my $png_file     = "$working_area/$png_name";
+  ( my $png_name     = $dbox_name ) =~ s{ \.dbox $ }{.png}x;
+  my $png_file     = "$working_area/$png_name";
 
+
+  return ($dbox_name, $tsv_file, $png_file);
+}
+
+
+### BEG the *next* SUB_CANDIDATE ((??))
+# Needs passed in: dbox_file, $indie_count, @header,  working_area
 
 # use first col as the default independent variable (x-axis)
 my $independent_default  = $header[ 0 ];

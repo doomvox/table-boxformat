@@ -1,4 +1,4 @@
-# Run via 'make test' or 'perl 66-Data-Boxes-Format-psql.t'
+# Run via 'make test' or 'perl 01-Data-BoxFormat-read_dbox.t'
 
 use strict;
 use warnings;

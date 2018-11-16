@@ -14,7 +14,7 @@ ok(1, "If we made it this far, we're ok. All modules are loaded.");
 BEGIN {
   use FindBin qw( $Bin );
   use lib ("$Bin/../lib/");
-  use_ok( 'Data::BoxFormat::Unicode::CharClasses', ':all' );
+  use_ok( 'Table::BoxFormat::Unicode::CharClasses', ':all' );
 };
 
 my @lines =

@@ -11,7 +11,7 @@ use Test::More;
 BEGIN {
   use FindBin qw( $Bin );
   use lib ("$Bin/../lib/");
-  use_ok('Data::BoxFormat');
+  use_ok('Table::BoxFormat');
 };
 
 # INSERT INTO funked_up (name, score, wisdom) VALUES
@@ -56,7 +56,7 @@ my $DAT = "$Bin/dat";
 
   my $input_file = "$DAT/funked_up-2-ascii_vertbars_middle-psql.dbox";
   my $bxs =
-    Data::BoxFormat->new(
+    Table::BoxFormat->new(
                      input_file => $input_file,
                     );
 
@@ -91,7 +91,7 @@ my $DAT = "$Bin/dat";
 
   my $input_file = "$DAT/funked_up-1-ascii_vertbars-psql.dbox";
   my $bxs =
-    Data::BoxFormat->new(
+    Table::BoxFormat->new(
                      input_file => $input_file,
                     );
 
@@ -130,7 +130,7 @@ exit;
   my $input_file = "$DAT/expensoids-psql_unicode.dbox";
 
   my $bxs =
-    Data::BoxFormat->new(
+    Table::BoxFormat->new(
                      input_file => $input_file,
                     );
 
@@ -144,7 +144,7 @@ exit;
   $input_file = "$DAT/expensoids-mysql.dbox";
 
   $bxs =
-    Data::BoxFormat->new(
+    Table::BoxFormat->new(
                      input_file => $input_file,
                     );
 

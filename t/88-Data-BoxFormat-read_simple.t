@@ -9,7 +9,7 @@ use Test::More;
 BEGIN {
   use FindBin qw( $Bin );
   use lib ("$Bin/../lib/");
-  use_ok('Data::BoxFormat');
+  use_ok('Table::BoxFormat');
 };
 
 
@@ -34,7 +34,7 @@ my $DAT = "$Bin/dat";
 
   my $input_file = "$DAT/expensoids-psql.dbox";
   my $bxs =
-    Data::BoxFormat->new(
+    Table::BoxFormat->new(
                      input_file => $input_file,
                     );
 
@@ -51,7 +51,7 @@ my $DAT = "$Bin/dat";
   $input_file = "$DAT/expensoids-psql_unicode.dbox";
 
   $bxs =
-    Data::BoxFormat->new(
+    Table::BoxFormat->new(
                      input_file => $input_file,
                     );
 
@@ -65,7 +65,7 @@ my $DAT = "$Bin/dat";
   $input_file = "$DAT/expensoids-mysql.dbox";
 
   $bxs =
-    Data::BoxFormat->new(
+    Table::BoxFormat->new(
                      input_file => $input_file,
                     );
 
@@ -83,7 +83,7 @@ my $DAT = "$Bin/dat";
   my $input_file  = "$DAT/expensoids-psql_unicode.dbox";
   my $output_file = "$DAT/expensoids-psql_unicode.tsv";
   my $bxs =
-    Data::BoxFormat->new(
+    Table::BoxFormat->new(
                      input_file  => $input_file,
                     );
 

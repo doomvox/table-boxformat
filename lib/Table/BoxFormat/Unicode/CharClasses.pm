@@ -1,15 +1,15 @@
-package Data::BoxFormat::Unicode::CharClasses;
+package Table::BoxFormat::Unicode::CharClasses;
 #                                doom@kzsu.stanford.edu
 #                                22 Dec 2016
 
 
 =head1 NAME
 
-Data::BoxFormat::Unicode::CharClasses - character classes to work with db SELECT result formats
+Table::BoxFormat::Unicode::CharClasses - character classes to work with db SELECT result formats
 
 =head1 SYNOPSIS
 
-   use Data::BoxFormat::Unicode::CharClasses ':all';
+   use Table::BoxFormat::Unicode::CharClasses ':all';
 
    $horizontal_dashes_plus_crosses_or_whitespace = 
            qr{ ^              
@@ -33,10 +33,10 @@ Data::BoxFormat::Unicode::CharClasses - character classes to work with db SELECT
 
 =head1 DESCRIPTION
 
-Data::BoxFormat::Unicode::CharClasses, contains a number of
+Table::BoxFormat::Unicode::CharClasses, contains a number of
 pre-defined character classes to assist in writing regular
 expressions to match elements of typical database SELECT result
-formats (see: L<Data::BoxFormat>).
+formats (see: L<Table::BoxFormat>).
 
 =head2 EXPORT
 
@@ -72,7 +72,7 @@ our $VERSION = '0.01';
 =head2 regexp properties
 
 Definitons of some custom regexp character properties that might
-be useful for projects such as L<Data::BoxFormat>, that work with
+be useful for projects such as L<Table::BoxFormat>, that work with
 the tabular text formats used by database monitors to display
 select results.
 
@@ -174,7 +174,7 @@ the ascii vertical bar or the unicode "BOX DRAWINGS LIGHT VERTICAL":
 
 =head1 SEE ALSO
 
-L<Data::BoxFormat>
+L<Table::BoxFormat>
 L<perlrecharclass>
 
 =head1 AUTHOR

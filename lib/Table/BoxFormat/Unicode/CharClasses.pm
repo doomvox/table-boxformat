@@ -2,6 +2,7 @@ package Table::BoxFormat::Unicode::CharClasses;
 #                                doom@kzsu.stanford.edu
 #                                22 Dec 2016
 
+=encoding utf8
 
 =head1 NAME
 
@@ -76,9 +77,7 @@ be useful for projects such as L<Table::BoxFormat>, that work with
 the tabular text formats used by database monitors to display
 select results.
 
-=over
-
-=cut
+=over 4
 
 =item IsHor
 
@@ -117,6 +116,8 @@ sub IsCross {
 =item IsDelim
 
 Matches the delimeter/separator characters used on column boundaries.
+
+=back
 
 =cut
 

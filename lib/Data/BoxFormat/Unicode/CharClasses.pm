@@ -11,7 +11,25 @@ Data::BoxFormat::Unicode::CharClasses - character classes to work with db SELECT
 
    use Data::BoxFormat::Unicode::CharClasses ':all';
 
-   TODO
+   $horizontal_dashes_plus_crosses_or_whitespace = 
+           qr{ ^              
+                [ \p{IsHor} \s ] +             
+               $  }x;               
+
+   $cross_character = 
+            qr{ 
+                 \p{IsCross}               
+                    {1,1}   # just one 
+               }xms;
+
+   $column_separator = 
+         qr{
+            \s+         # require leading whitespace
+            \p{IsDelim}
+                {1,1}   # just one
+            \s+         # require trailing whitespace
+        }xms;
+
 
 =head1 DESCRIPTION
 
@@ -105,7 +123,7 @@ Matches the delimeter/separator characters used on column boundaries.
 sub IsDelim {
   my @codepoints =
     (
-     '007C',  # |  \N{VERTICAL LINE}
+     '007C',  #  |  \N{VERTICAL LINE}
      '2502',  #  │  \N{BOX DRAWINGS LIGHT VERTICAL}
     );
   my $list = join "\n", @codepoints;

@@ -87,8 +87,11 @@ my $DAT = "$Bin/dat";
                      input_file  => $input_file,
                     );
 
-  my $status = $bxs->output_to_tsv( $output_file ); # output straight to tsv file
-  is( $status, 1, "$test_name: returns success code" );
+#  my $status = $bxs->output_to_tsv( $output_file ); # output straight to tsv file
+  my $data_aref_of_aref = $bxs->output_to_tsv( $output_file ); # output straight to tsv file
+#  is( $status, 1, "$test_name: returns success code" );
+  is( ref( $data_aref_of_aref ), 'ARRAY', "$test_name: returns an array reference" );
+
 
   my $expected_file = qq{$DAT/expensoids_expected.tsv};
   my $expected = do{ undef $/; open my $fh, '<', $expected_file; <$fh> };

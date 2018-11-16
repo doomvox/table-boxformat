@@ -17,23 +17,21 @@ my $DAT = "$Bin/dat";
    #  /home/doom/End/Cave/SkullPlot/Wall/Data-Boxes/t/dat
 
 {
-  my $test_name = "Testing output_to_tsv method";
+  my $test_name = "Testing output_to_csv method";
 
   my $format = 'psql_unicode';
 
   my $input_file  = "$DAT/expensoids-psql_unicode.dbox";
-  my $output_file = "$DAT/expensoids-psql_unicode.tsv";
+  my $output_file = "$DAT/expensoids-psql_unicode.csv";
   my $bxs =
     Data::BoxFormat->new(
                      input_file  => $input_file,
                     );
 
-#  my $status = $bxs->output_to_tsv( $output_file ); # output straight to tsv file
-  my $data_aref_of_aref = $bxs->output_to_tsv( $output_file ); # output straight to tsv file
-#  is( $status, 1, "$test_name: returns success code" );
-  is( ref( $data_aref_of_aref ), 'ARRAY', "$test_name: returns an array reference" );
+  my $status = $bxs->output_to_csv( $output_file ); # output straight to csv file
+  is( $status, 1, "$test_name: returns success code" );
 
-  my $expected_file = qq{$DAT/expensoids_expected.tsv};
+  my $expected_file = qq{$DAT/expensoids_expected.csv};
   my $expected = do{ undef $/; open my $fh, '<', $expected_file; <$fh> };
   my $result   = do{ undef $/; open my $fh, '<', $expected_file; <$fh> };
 
